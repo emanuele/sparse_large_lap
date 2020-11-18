@@ -16,10 +16,10 @@ from matching import min_weight_full_bipartite_matching
 from scipy.optimize import linear_sum_assignment
 
 np.random.seed(0)
-N_streamlines1=5000
-N_streamlines2=5000
+N_streamlines1=8000
+N_streamlines2=8000
 N_points=32
-k=1000
+k=500
 
 # %% Load Trk
 print("laod stramlines...")
@@ -47,18 +47,20 @@ print("Creation of the Sparse Cost Matrix")
 
 cost = sparse.csr_matrix((N_streamlines1,N_streamlines2),dtype=np.float)
 
-for i in range(N_streamlines1):
-    print(i)
-    cost[i, neighbours[i]] = distances[i]
+tmp=np.repeat(np.arange(N_streamlines1)[:, None], k, axis=1 )
+
+cost[tmp, neighbours] = distances
 
 #cost=cost.tocsr()
 
-cost=cost.todense() 
-cost[cost==0]=np.inf
+cost1=cost.todense() 
+cost1[cost1==0]=np.inf #10**4
 print('Linear Sum Assigment')
 t0 = time()
-row_ind, col_ind = linear_sum_assignment(cost)
+row_ind1, col_ind1 = linear_sum_assignment(cost1)
 print('%s sec' % (time() - t0))
+total_cost1 = cost[row_ind1, col_ind1].sum()
+print('lap cost=%s' % total_cost1)
 
 # %% MWFBM  
 
