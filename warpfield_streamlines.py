@@ -23,8 +23,8 @@ N_points=32
 n_neighbors=10
 
 
-N_streamlines1=10000#00
-N_streamlines2=10000#00
+N_streamlines1=40000#00
+N_streamlines2=40000#00
 
 show=False
 SLR_flag=False
@@ -65,6 +65,7 @@ track_fixed_fname="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/
 
 filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+
 track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
 track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
 
@@ -174,7 +175,22 @@ Warp[:,:,:,0] = Y_pred[:,0].reshape(Warp.shape[0:3])
 Warp[:,:,:,1] = Y_pred[:,1].reshape(Warp.shape[0:3])
 Warp[:,:,:,2] = Y_pred[:,2].reshape(Warp.shape[0:3])
 
-warpfiled_filename=save_dir+'/WarpField.nii.gz'
+dcms1=len(str(N_streamlines1))
+if dcms1 > 3 and dcms1 < 7:
+    N_streamlines1_str=str(int(N_streamlines1*1e-3))+'K'
+elif dcms1 > 6 and dcms1 < 10:
+    N_streamlines1_str=str(int(N_streamlines1*1e-6))+'G'   
+
+dcms2=len(str(N_streamlines2))
+if dcms2 > 3 and dcms2 < 7:
+    N_streamlines2_str=str(int(N_streamlines2*1e-3))+'K'
+elif dcms2 > 6 and dcms2 < 10:
+    N_streamlines2_str=str(int(N_streamlines2*1e-6))+'G'   
+
+if N_streamlines2_str == N_streamlines1_str:
+    warpfiled_filename=save_dir+'/WarpField_'+N_streamlines2_str+'.nii.gz'
+else:
+     warpfiled_filename=save_dir+'/WarpField_'+N_streamlines1_str+'vs'+N_streamlines2_str+'nii.gz'       
 
 WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
 WarpNII.to_filename(warpfiled_filename)

@@ -12,7 +12,7 @@ from dipy.tracking.streamline import set_number_of_points
 from nilab.nearest_neighbors import streamlines_neighbors
 from scipy import sparse
 from time import time 
-from matching import min_weight_full_bipartite_matching
+#from matching import min_weight_full_bipartite_matching
 from scipy.optimize import linear_sum_assignment
 import os
 
@@ -57,24 +57,22 @@ cost[tmp, neighbours] = distances
 
 #cost=cost.tocsr()
 
-cost1=cost.todense() 
-cost1[cost1==0]=np.inf #10**4
 
-# %% Test on matlab
+# %% Save for matlab
 import scipy.io as sio
 data={ 'cost': cost }
 matfile="/home/gamorosino/local/sparse_large_lap/cost_sparse.mat"
 sio.savemat(matfile,data)
 
-# %% Fast Linear Assignment Problem using Auction Algorithm
+# %% MATLAB: Fast Linear Assignment Problem using Auction Algorithm
 print('Matlab: Fast Linear Assignment Problem using Auction Algorithm')
-fastAuction="/home/gamorosino/local/fastAuction_v2.6"
-
 import subprocess
 
-cmd = """matlab -nodesktop -nosplash -r "addpath('"""+fastAuction+"""'); mat=load('"""+matfile+"""'); applyFastAuction(mat.cost) ; quit;"   """
+fastAuction="/home/gamorosino/local/fastAuction_v2.6"
 
-os.system(cmd + ' >> /tmp/output_py.txt')
+
+cmd = """matlab -nodesktop -nosplash -r "addpath('"""+fastAuction+"""'); mat=load('"""+matfile+"""'); applyFastAuction(mat.cost) ; quit;"   """
+os.system(cmd + ' > /tmp/output_matlab.txt')
 cmd="cat /tmp/output_py.txt"
 process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
 output, error = process.communicate()
@@ -85,6 +83,10 @@ print('output:', output.decode("utf-8"))
 
 # %% Linear Sum Assigment  
 if lap_flag:
+    cost1=cost.todense() 
+    cost1[cost1==0]=np.inf #10**4
+
+    
     print('Linear Sum Assigment')
     t0 = time()
     row_ind1, col_ind1 = linear_sum_assignment(cost1)
