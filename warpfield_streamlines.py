@@ -18,7 +18,7 @@ from nilab.nearest_neighbors import streamlines_neighbors
 from dipy.tracking.distances import bundles_distances_mam, bundles_distances_mdf
 from dipy.tracking.streamline import set_number_of_points
 from scipy.optimize import linear_sum_assignment
-from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neighbors import KNeighborsRegressor, RadiusNeighborsRegressor
 from nilab.load_trk import load_streamlines
 from fury import actor, window
 from time import sleep
@@ -30,7 +30,7 @@ from matching import min_weight_full_bipartite_matching
 
 N_points=32
 n_neighbors=10 #Performs KNeighborsRegressor
-
+radius=20
 
 N_streamlines1=100000#00
 N_streamlines2=100000#00
@@ -38,10 +38,10 @@ N_streamlines2=100000#00
 show=False
 plot_flag=False
 SLR_flag=False
-sparse_flag=True
+sparse_flag=False
 MATLAB_flag=False
 MWFBM_flag=True
-dense_flag=False
+dense_flag=True
 
 k_sparse=5000
 
@@ -65,6 +65,9 @@ def loadTrk(filename):
 
 def show_both_bundles(bundles, colors=None, show=True, fname=None):
 
+     if colors is None:
+         colors=[window.colors.orange, window.colors.red]
+        
      scene = window.Scene()
      scene.SetBackground(1., 1, 1)
      for (i, bundle) in enumerate(bundles):
@@ -81,19 +84,20 @@ def show_both_bundles(bundles, colors=None, show=True, fname=None):
 
 #%% Load tracts
 
-filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk_gabriele/slf_I_right.trk"
-filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
+filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_III_left.trk"
+filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_III_left.trk"
 
 #filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 #filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 
 #prefix=
 
-track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
-track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
+#track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
+#track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
 
-#track_moving, aff_moving=loadTrk(filename1)
-#track_fixed, aff_fixed=loadTrk(filename2)
+track_moving, aff_moving=loadTrk(filename1)
+track_fixed, aff_fixed=loadTrk(filename2)
+
 
 #_, aff_moving=loadTrk(filename1)
 
@@ -122,9 +126,9 @@ if dcms3 > 3 and dcms3 < 7:
 
 #%% Load FA
 
-FA_filename1="data1/fa.nii.gz"
+#FA_filename1="data1/fa.nii.gz"
 
-#FA_filename1="/home/gamorosino/data/APSS_Neglect/sub-01_MaRo_NifTI/epo-00/DTI/DTI_bUP/DTI_bUP_data_processed1mm/ConnectGen_files/fa.nii.gz"
+FA_filename1="/home/gamorosino/data/APSS_Neglect/sub-01_MaRo_NifTI/epo-00/DTI/DTI_bUP/DTI_bUP_data_processed1mm/ConnectGen_files/fa.nii.gz"
 
 FA_nib=nib.load(FA_filename1)
 aff_moving=FA_nib.affine
@@ -264,7 +268,8 @@ for indx,suffix in enumerate(suffix_list):
     
     #%% KNeighborsRegressor
     print("Performs KNeighborsRegressor...")
-    neigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1)
+    neigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
+    #neigh = RadiusNeighborsRegressor(n_jobs=1, radius=radius, weights='uniform')
     neigh.fit(X_train, Y_train)
     #%% Meshgrid
     suffix=suffix+"_nn"+str(n_neighbors)
@@ -284,17 +289,19 @@ for indx,suffix in enumerate(suffix_list):
    
     X_test=(np.vstack([YY.flatten(),XX.flatten(),ZZ.flatten()]).T)
 
+    #TODO: apply_affine dipy 
     X_test = ( np.dot(aff_moving[:-1,:-1],X_test.T) + np.expand_dims(aff_moving[:-1,-1], axis=1 )).T
     
     #%% Predict 
     print("Predict Warp Vectors...")
     Y_pred=neigh.predict(X_test)
+    Y_pred=np.nan_to_num(Y_pred)
     
     #%% Warp Field 
     
     Warp = np.zeros((len(Y_range),len(X_range),len(Z_range),3))
-    Warp[:,:,:,0] = Y_pred[:,0].reshape(Warp.shape[0:3])
-    Warp[:,:,:,1] = Y_pred[:,1].reshape(Warp.shape[0:3])
+    Warp[:,:,:,0] = Y_pred[:,1].reshape(Warp.shape[0:3])
+    Warp[:,:,:,1] = Y_pred[:,0].reshape(Warp.shape[0:3])
     Warp[:,:,:,2] = Y_pred[:,2].reshape(Warp.shape[0:3])
     
   
@@ -307,6 +314,17 @@ for indx,suffix in enumerate(suffix_list):
     WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
     print('save '+warpfiled_filename)
     WarpNII.to_filename(warpfiled_filename)
+
+#%% Apply Warp
+    
+    warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
+    warpNeigh.fit(X_test, Y_pred)
+    moving_disp=warpNeigh.predict(X_train)
+    moving_warped = X_train + moving_disp
+    n_=int(len(moving_warped)/N_points)
+    track_moving_warped = np.zeros([n_,N_points,3])
+    for idx in range(n_):
+        track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]
 
 #%% PLOT
 if plot_flag:
