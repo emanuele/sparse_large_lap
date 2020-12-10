@@ -25,6 +25,7 @@ from time import sleep
 from scipy import sparse
 from time import time 
 from matching import min_weight_full_bipartite_matching
+from dipy.tracking.metrics import length as streamline_length
 
 #%% Define Varaibles
 
@@ -32,10 +33,12 @@ N_points=32
 n_neighbors=10 #Performs KNeighborsRegressor
 radius=20
 
-N_streamlines1=100000#00
-N_streamlines2=100000#00
+N_streamlines1=1000#00
+N_streamlines2=1000#00
 
-show=False
+streamline_step=1.0
+
+show_b=False
 plot_flag=False
 SLR_flag=False
 sparse_flag=False
@@ -43,7 +46,7 @@ MATLAB_flag=False
 MWFBM_flag=True
 dense_flag=True
 
-k_sparse=5000
+k_sparse=100
 
 suffix='_np'+str(N_points)
 
@@ -69,12 +72,17 @@ def show_both_bundles(bundles, colors=None, show=True, fname=None):
          colors=[window.colors.orange, window.colors.red]
         
      scene = window.Scene()
-     scene.SetBackground(1., 1, 1)
+     #scene.SetBackground(1., 1, 1)
+
+#     scene.set_camera(position=(-176.42, 118.52, 128.20),
+#                 focal_point=(113.30, 128.31, 76.56),
+#                 view_up=(0.18, 0.00, 0.98))
+
      for (i, bundle) in enumerate(bundles):
          color = colors[i]
-         lines_actor = actor.streamtube(bundle, color, linewidth=0.3)
-         lines_actor.RotateX(-90)
-         lines_actor.RotateZ(90)
+         lines_actor = actor.line(bundle, color, linewidth=0.3)
+         #lines_actor.RotateX(-90)
+         #lines_actor.RotateZ(90)
          scene.add(lines_actor)
      if show:
          window.show(scene)
@@ -101,7 +109,7 @@ track_fixed, aff_fixed=loadTrk(filename2)
 
 #_, aff_moving=loadTrk(filename1)
 
-if show is True:
+if show_b is True:
     show_both_bundles([track_moving, track_fixed],
                    colors=[window.colors.orange, window.colors.red],
                    show=True,
@@ -154,7 +162,7 @@ if SLR_flag:
     srr = StreamlineLinearRegistration(bounds=bounds)
     srm = srr.optimize(static=track_fixed, moving=track_moving)
     track_moving = srm.transform(track_moving)
-    if show is True:
+    if show_b is True:
         show_both_bundles([track_moving, track_fixed],
                        colors=[window.colors.orange, window.colors.red],
                        show=True,
@@ -262,9 +270,28 @@ if dense_flag:
 for indx,suffix in enumerate(suffix_list):
     #%% Stack Stramlines
     col_ind = col_ind_list[indx]
-    
-    X_train = np.vstack(track_moving)
-    Y_train = np.vstack(track_fixed[col_ind] - track_moving)
+
+    dist=np.linalg.norm((track_moving - track_fixed[col_ind]).reshape(-1, N_points*3), axis=1)
+    dist_flip=np.linalg.norm((track_moving - track_fixed[col_ind][:,::-1,:]).reshape(-1, N_points*3), axis=1)
+    idx_flip=dist_flip<dist
+    X_train = [] # np.zeros((len(track_moving) * N_points, 3))
+    Y_train = [] # np.zeros_like(X_train)
+    for i, streamline_moving in enumerate(track_moving):
+        streamline_fixed = track_fixed[col_ind[i]]
+        if idx_flip[i]:
+            streamline_fixed = streamline_fixed[::-1,:]
+        # resample according to the length of streamline_moving:
+        N_s_points = int( streamline_length(streamline_moving) / streamline_step  )
+        streamline_moving = set_number_of_points( [streamline_moving] ,  N_s_points )[0]
+        streamline_fixed = set_number_of_points( [streamline_fixed] ,  N_s_points )[0]        
+        
+        X_train.append(streamline_moving)
+        Y_train.append(streamline_fixed - streamline_moving)
+        # X_train[i*N_points:(i+1)*N_points, :] = streamline_moving
+        # Y_train[i*N_points:(i+1)*N_points, :] = streamline_fixed - streamline_moving
+
+    X_train = np.vstack(X_train)
+    Y_train = np.vstack(Y_train)
     
     #%% KNeighborsRegressor
     print("Performs KNeighborsRegressor...")
@@ -314,9 +341,10 @@ for indx,suffix in enumerate(suffix_list):
     WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
     print('save '+warpfiled_filename)
     WarpNII.to_filename(warpfiled_filename)
+    
 
 #%% Apply Warp
-    
+    print("Apply Warp...")   
     warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
     warpNeigh.fit(X_test, Y_pred)
     moving_disp=warpNeigh.predict(X_train)
@@ -325,7 +353,7 @@ for indx,suffix in enumerate(suffix_list):
     track_moving_warped = np.zeros([n_,N_points,3])
     for idx in range(n_):
         track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]
-
+    show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red])    
 #%% PLOT
 if plot_flag:
     import matplotlib.pyplot as plt
