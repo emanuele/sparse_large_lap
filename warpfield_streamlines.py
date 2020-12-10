@@ -30,7 +30,7 @@ from dipy.tracking.metrics import length as streamline_length
 #%% Define Varaibles
 
 N_points=32
-n_neighbors=10 #Performs KNeighborsRegressor
+n_neighbors=30 #Performs KNeighborsRegressor
 radius=20
 
 N_streamlines1=1000#00
@@ -52,13 +52,16 @@ suffix='_np'+str(N_points)
 
 this_dir=os.path.dirname(os.path.realpath(__file__))
 save_dir=this_dir+'/saved/'
-try:
-    os.makedirs(save_dir)
-except:
-        pass
+WarpField_dir=this_dir+'/WarpFields/'
+ScreenShot_dir=save_dir+'/ScreenShot/'
 
 #%% Define Functions
-
+def tryMkdir(filename):
+    
+    try:
+        os.makedirs(filename)
+    except:
+        pass
 
 def loadTrk(filename):
     data = nib.streamlines.load(filename)
@@ -90,10 +93,20 @@ def show_both_bundles(bundles, colors=None, show=True, fname=None):
          sleep(1)
          window.record(scene, n_frames=1, out_path=fname, size=(900, 900))
 
+#%% Make Dirs
+
+
+tryMkdir(save_dir)
+tryMkdir(WarpField_dir)
+tryMkdir(ScreenShot_dir)
+
+
 #%% Load tracts
 
 filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_III_left.trk"
+filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk_gabriele/slf_I_right.trk"
 filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_III_left.trk"
+filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
 
 #filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 #filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
@@ -334,9 +347,9 @@ for indx,suffix in enumerate(suffix_list):
   
     
     if N_streamlines2_str == N_streamlines1_str:
-        warpfiled_filename=save_dir+'/WarpField_N'+N_streamlines2_str+suffix+'.nii.gz'
+        warpfiled_filename=WarpField_dir+'/WarpField_N'+N_streamlines2_str+suffix+'.nii.gz'
     else:
-         warpfiled_filename=save_dir+'/WarpField_N'+N_streamlines1_str+'vs'+N_streamlines2_str+suffix+'.nii.gz'       
+         warpfiled_filename=WarpField_dir+'/WarpField_N'+N_streamlines1_str+'vs'+N_streamlines2_str+suffix+'.nii.gz'       
 
     WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
     print('save '+warpfiled_filename)
@@ -347,13 +360,20 @@ for indx,suffix in enumerate(suffix_list):
     print("Apply Warp...")   
     warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
     warpNeigh.fit(X_test, Y_pred)
-    moving_disp=warpNeigh.predict(X_train)
-    moving_warped = X_train + moving_disp
-    n_=int(len(moving_warped)/N_points)
-    track_moving_warped = np.zeros([n_,N_points,3])
-    for idx in range(n_):
-        track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]
-    show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red])    
+    if False:
+        moving_disp=warpNeigh.predict(X_train)
+        moving_warped = X_train + moving_disp
+        n_=int(len(moving_warped)/N_points)
+        track_moving_warped = np.zeros([n_,N_points,3])
+        for idx in range(n_):
+            track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]    
+    else:
+        track_moving_warped = track_moving.copy()
+        for i, streamline in enumerate(track_moving):
+            streamline_warp = warpNeigh.predict(streamline)
+            track_moving_warped[i] += streamline_warp
+            
+    show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red],fname=ScreenShot_dir+'/after_Warp.png')    
 #%% PLOT
 if plot_flag:
     import matplotlib.pyplot as plt
