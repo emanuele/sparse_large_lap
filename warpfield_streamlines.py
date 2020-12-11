@@ -45,6 +45,7 @@ sparse_flag=False
 MATLAB_flag=False
 MWFBM_flag=True
 dense_flag=True
+apply_warp_flag=True
 
 k_sparse=100
 
@@ -52,7 +53,7 @@ suffix='_np'+str(N_points)
 
 this_dir=os.path.dirname(os.path.realpath(__file__))
 save_dir=this_dir+'/saved/'
-WarpField_dir=this_dir+'/WarpFields/'
+WarpField_dir=save_dir+'/WarpFields/'
 ScreenShot_dir=save_dir+'/ScreenShot/'
 
 #%% Define Functions
@@ -103,18 +104,27 @@ tryMkdir(ScreenShot_dir)
 
 #%% Load tracts
 
-filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_III_left.trk"
-filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk_gabriele/slf_I_right.trk"
-filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_III_left.trk"
-filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
+#filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk_gabriele/slf_I_right.trk"
+#filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
 
-#filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
-#filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+#filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_III_left.trk"
+#filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_III_left.trk"
+
+#track_moving, aff_moving=loadTrk(filename1)
+#track_fixed, aff_fixed=loadTrk(filename2)
+
+
+filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 
 #prefix=
 
 #track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
 #track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
+
+
+filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_I_right.trk"
+filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
 
 track_moving, aff_moving=loadTrk(filename1)
 track_fixed, aff_fixed=loadTrk(filename2)
@@ -357,23 +367,24 @@ for indx,suffix in enumerate(suffix_list):
     
 
 #%% Apply Warp
-    print("Apply Warp...")   
-    warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
-    warpNeigh.fit(X_test, Y_pred)
-    if False:
-        moving_disp=warpNeigh.predict(X_train)
-        moving_warped = X_train + moving_disp
-        n_=int(len(moving_warped)/N_points)
-        track_moving_warped = np.zeros([n_,N_points,3])
-        for idx in range(n_):
-            track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]    
-    else:
-        track_moving_warped = track_moving.copy()
-        for i, streamline in enumerate(track_moving):
-            streamline_warp = warpNeigh.predict(streamline)
-            track_moving_warped[i] += streamline_warp
-            
-    show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red],fname=ScreenShot_dir+'/after_Warp.png')    
+    if apply_warp_flag:
+        print("Apply Warp...")   
+        warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
+        warpNeigh.fit(X_test, Y_pred)
+        if False:
+            moving_disp=warpNeigh.predict(X_train)
+            moving_warped = X_train + moving_disp
+            n_=int(len(moving_warped)/N_points)
+            track_moving_warped = np.zeros([n_,N_points,3])
+            for idx in range(n_):
+                track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]    
+        else:
+            track_moving_warped = track_moving.copy()
+            for i, streamline in enumerate(track_moving):
+                streamline_warp = warpNeigh.predict(streamline)
+                track_moving_warped[i] += streamline_warp
+                
+        show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red],fname=ScreenShot_dir+'/after_Warp.png')    
 #%% PLOT
 if plot_flag:
     import matplotlib.pyplot as plt
