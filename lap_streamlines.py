@@ -23,7 +23,7 @@ N_points=32
 k=1000
 lap_flag=False
 MWFBM_flag=False
-
+MATLAB_flag=True
 # %% Load Trk
 print("laod stramlines...")
 
@@ -57,26 +57,26 @@ cost[tmp, neighbours] = distances
 
 #cost=cost.tocsr()
 
-
-# %% Save for matlab
-import scipy.io as sio
-data={ 'cost': cost }
-matfile="/home/gamorosino/local/sparse_large_lap/cost_sparse.mat"
-sio.savemat(matfile,data)
-
-# %% MATLAB: Fast Linear Assignment Problem using Auction Algorithm
-print('Matlab: Fast Linear Assignment Problem using Auction Algorithm')
-import subprocess
-
-fastAuction="/home/gamorosino/local/fastAuction_v2.6"
-
-
-cmd = """matlab -nodesktop -nosplash -r "addpath('"""+fastAuction+"""'); mat=load('"""+matfile+"""'); applyFastAuction(mat.cost) ; quit;"   """
-os.system(cmd + ' > /tmp/output_matlab.txt')
-cmd="cat /tmp/output_py.txt"
-process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
-output, error = process.communicate()
-print('output:', output.decode("utf-8"))
+if MATLAB_flag:
+    # %% Save for matlab
+    import scipy.io as sio
+    data={ 'cost': cost }
+    matfile="/home/gamorosino/local/sparse_large_lap/cost_sparse.mat"
+    sio.savemat(matfile,data)
+    
+    # %% MATLAB: Fast Linear Assignment Problem using Auction Algorithm
+    print('Matlab: Fast Linear Assignment Problem using Auction Algorithm')
+    import subprocess
+    
+    fastAuction="/home/gamorosino/local/fastAuction_v2.6"
+    
+    
+    cmd = """matlab -nodesktop -nosplash -r "addpath('"""+fastAuction+"""'); mat=load('"""+matfile+"""'); applyFastAuction(mat.cost) ; quit;"   """
+    os.system(cmd + ' > /tmp/output_matlab.txt')
+    cmd="cat /tmp/output_py.txt"
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+    print('output:', output.decode("utf-8"))
 
 
 #gnome-terminal -x bash -c ""	

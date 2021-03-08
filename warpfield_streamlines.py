@@ -26,28 +26,31 @@ from scipy import sparse
 from time import time 
 from matching import min_weight_full_bipartite_matching
 from dipy.tracking.metrics import length as streamline_length
+from dipy.io.stateful_tractogram import Space, StatefulTractogram
+from dipy.io.streamline import  save_tractogram
 
 #%% Define Varaibles
 
 N_points=32
-n_neighbors=30 #Performs KNeighborsRegressor
+n_neighbors=30 #30 #Performs KNeighborsRegressor
 radius=20
 
-N_streamlines1=1000#00
-N_streamlines2=1000#00
+N_streamlines1=100000#00
+N_streamlines2=100000#00
 
 streamline_step=1.0
 
 show_b=False
 plot_flag=False
 SLR_flag=False
-sparse_flag=False
+sparse_flag=True
 MATLAB_flag=False
 MWFBM_flag=True
-dense_flag=True
+dense_flag=False
+saveWarp_flag=False
 apply_warp_flag=True
 
-k_sparse=100
+k_sparse=1000
 
 suffix='_np'+str(N_points)
 
@@ -55,6 +58,8 @@ this_dir=os.path.dirname(os.path.realpath(__file__))
 save_dir=this_dir+'/saved/'
 WarpField_dir=save_dir+'/WarpFields/'
 ScreenShot_dir=save_dir+'/ScreenShot/'
+WarpedShot_dir=save_dir+'/WarpedTracts/'
+
 
 #%% Define Functions
 def tryMkdir(filename):
@@ -100,7 +105,7 @@ def show_both_bundles(bundles, colors=None, show=True, fname=None):
 tryMkdir(save_dir)
 tryMkdir(WarpField_dir)
 tryMkdir(ScreenShot_dir)
-
+tryMkdir(WarpedShot_dir)
 
 #%% Load tracts
 
@@ -113,21 +118,23 @@ tryMkdir(ScreenShot_dir)
 #track_moving, aff_moving=loadTrk(filename1)
 #track_fixed, aff_fixed=loadTrk(filename2)
 
+filename1="/home/gamorosino/data/APSS_Neglect/sub-01_MaRo_NifTI/epo-01/DTI/DTI_bUP/DTI_bUP_data_processed1mm/ConnectGen_files/ResponseFunctionFA/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+filename2="/home/gamorosino/data/APSS_Neglect/sub-01_MaRo_NifTI/epo-00/DTI/DTI_bUP/DTI_bUP_data_processed1mm/ConnectGen_files/ResponseFunctionFA/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 
-filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
-filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+#filename1="data1/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
+#filename2="data2/1M_len20-250mm_coff0001_step1_seedimage_30deg_SD_STREAM.trk"
 
 #prefix=
 
-#track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
-#track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
+track_moving, header1, lengths1, indices1=load_streamlines(filename1,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
+track_fixed, header2, lengths2, indices2=load_streamlines(filename2,container="array",verbose=True,idxs=N_streamlines2,apply_affine=True)
 
 
-filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_I_right.trk"
-filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
+#filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_I_right.trk"
+#filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
 
-track_moving, aff_moving=loadTrk(filename1)
-track_fixed, aff_fixed=loadTrk(filename2)
+#track_moving, aff_moving=loadTrk(filename1)
+#track_fixed, aff_fixed=loadTrk(filename2)
 
 
 #_, aff_moving=loadTrk(filename1)
@@ -154,6 +161,13 @@ elif dcms2 > 6 and dcms2 < 10:
 dcms3=len(str(k_sparse))
 if dcms3 > 3 and dcms3 < 7:
         Ksparse_str=str((k_sparse*1e-3))+'K'
+else:
+        Ksparse_str=str(k_sparse)  
+if N_streamlines2_str == N_streamlines1_str:
+            suffix='_'+N_streamlines2_str+suffix
+else:
+            suffix='_'+N_streamlines1_str+'vs'+N_streamlines2_str+suffix   
+
 
 #%% Load FA
 
@@ -348,27 +362,28 @@ for indx,suffix in enumerate(suffix_list):
     Y_pred=np.nan_to_num(Y_pred)
     
     #%% Warp Field 
-    
-    Warp = np.zeros((len(Y_range),len(X_range),len(Z_range),3))
-    Warp[:,:,:,0] = Y_pred[:,1].reshape(Warp.shape[0:3])
-    Warp[:,:,:,1] = Y_pred[:,0].reshape(Warp.shape[0:3])
-    Warp[:,:,:,2] = Y_pred[:,2].reshape(Warp.shape[0:3])
-    
-  
-    
-    if N_streamlines2_str == N_streamlines1_str:
-        warpfiled_filename=WarpField_dir+'/WarpField_N'+N_streamlines2_str+suffix+'.nii.gz'
-    else:
-         warpfiled_filename=WarpField_dir+'/WarpField_N'+N_streamlines1_str+'vs'+N_streamlines2_str+suffix+'.nii.gz'       
-
-    WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
-    print('save '+warpfiled_filename)
-    WarpNII.to_filename(warpfiled_filename)
+    if saveWarp_flag:
+        Warp = np.zeros((len(Y_range),len(X_range),len(Z_range),3))
+        Warp[:,:,:,0] = Y_pred[:,1].reshape(Warp.shape[0:3])
+        Warp[:,:,:,1] = Y_pred[:,0].reshape(Warp.shape[0:3])
+        Warp[:,:,:,2] = Y_pred[:,2].reshape(Warp.shape[0:3])
+         
+        warpfiled_filename=WarpField_dir+'/WarpField_N'+suffix+'.nii.gz'
+        WarpNII = nib.Nifti1Image(Warp, affine=aff_moving,header=head_moving) #,header=head_moving) 
+        print('save '+warpfiled_filename)
+        WarpNII.to_filename(warpfiled_filename)
     
 
 #%% Apply Warp
     if apply_warp_flag:
         print("Apply Warp...")   
+        
+        filename1="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-01/trk/SLF_I_right.trk"
+        filename2="/home/gamorosino/data/APSS_Neglect/tracts/sub-01_MaRo/epo-00/trk/SLF_I_right.trk"
+
+        track_moving, aff_moving=loadTrk(filename1)
+        track_fixed, aff_fixed=loadTrk(filename2)
+        
         warpNeigh = KNeighborsRegressor(n_neighbors=n_neighbors, n_jobs=-1, weights='distance')
         warpNeigh.fit(X_test, Y_pred)
         if False:
@@ -384,7 +399,14 @@ for indx,suffix in enumerate(suffix_list):
                 streamline_warp = warpNeigh.predict(streamline)
                 track_moving_warped[i] += streamline_warp
                 
-        show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red],fname=ScreenShot_dir+'/after_Warp.png')    
+        warped_filename=WarpedShot_dir+'/track_warped'+suffix+'.trk'
+        
+        track_moving_warped_sft=StatefulTractogram(track_moving_warped, FA_nib, Space.RASMM)
+        idx_toremove,idx_tokeep = track_moving_warped_sft.remove_invalid_streamlines()
+        save_tractogram(track_moving_warped_sft,warped_filename)  
+        print("save warped tracts as: "+warped_filename )
+        
+        #show_both_bundles((track_moving_warped,track_fixed,track_moving),colors=[window.colors.cyan,window.colors.green,window.colors.red],fname=ScreenShot_dir+'/after_Warp.png')    
 #%% PLOT
 if plot_flag:
     import matplotlib.pyplot as plt
