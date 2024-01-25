@@ -30,11 +30,15 @@ from dipy.io.stateful_tractogram import Space, StatefulTractogram
 from dipy.io.streamline import  save_tractogram
 import sys
 
+from multiprocessing import  set_start_method, cpu_count
+import ray
+from ray.util.multiprocessing import Pool
+
 N_points=32
-n_neighbors=1000 #30 #Performs KNeighborsRegressor
-n_neighbors_apply=24
-radius_to_apply=30
-radius=30
+n_neighbors=5 #30 #Performs KNeighborsRegressor
+n_neighbors_apply=30
+radius_to_apply=15
+radius=15 #2
 
 N_streamlines1=1000#00
 N_streamlines2=1000#00
@@ -49,7 +53,9 @@ k_sparse=int(N_streamlines1/10)
 
 suffix='_np'+str(N_points)
 
-
+nthreads=1000
+#export NUMEXPR_MAX_THREADS=100000
+#export OMP_NUM_THREADS=1000
 
 def disp2warp(disp,track_moving,dims,n_neighbors,aff_moving,warpfiled_filename=None, reference=None, inv=False,mask_warp_flag=False):
             
@@ -90,7 +96,7 @@ def disp2warp(disp,track_moving,dims,n_neighbors,aff_moving,warpfiled_filename=N
         
         XX,YY,ZZ = np.meshgrid(X_range,Y_range,Z_range)
 
-        X_test=(np.vstack([YY.flatten(),XX.flatten(),ZZ.flatten()]).T)
+        X_test=(np.vstack([YY.flatten(),XX.flatten(),ZZ.flatten()]).T) #shifted
         #X_test=(np.vstack([XX.flatten(),YY.flatten(),ZZ.flatten()]).T)
     
         #TODO: apply_affine dipy 
@@ -106,11 +112,11 @@ def disp2warp(disp,track_moving,dims,n_neighbors,aff_moving,warpfiled_filename=N
             WF_nib=nib.load(reference)
             aff_moving=WF_nib.affine
             head_moving=WF_nib.header
-            Warp = np.zeros((len(Y_range),len(X_range),len(Z_range),3))
+            Warp = np.zeros((len(Y_range),len(X_range),len(Z_range),3))  #shifted
             #Warp = np.zeros((len(X_range),len(Y_range),len(Z_range),3))
-            Warp_ch1 = Y_pred[:,1].reshape(Warp.shape[0:3])
+            Warp_ch1 = Y_pred[:,1].reshape(Warp.shape[0:3])  #shifted
+            Warp_ch2 = Y_pred[:,0].reshape(Warp.shape[0:3])  #shifted
             #Warp_ch1 = Y_pred[:,0].reshape(Warp.shape[0:3])
-            Warp_ch2 = Y_pred[:,0].reshape(Warp.shape[0:3])
             #Warp_ch2 = Y_pred[:,1].reshape(Warp.shape[0:3])
             Warp_ch3 = Y_pred[:,2].reshape(Warp.shape[0:3])
             if mask_warp_flag:
@@ -128,9 +134,21 @@ def disp2warp(disp,track_moving,dims,n_neighbors,aff_moving,warpfiled_filename=N
             print('save '+warpfiled_filename)
             WarpNII.to_filename(warpfiled_filename)
         return Y_pred, X_test
+
+
+def close_pool(pool):
+       pool.close()
+       pool.terminate()
+       pool.join()   
+
+def applyWarp2streamline(warpNeigh,track_moving_toapply,i):
+    streamline=track_moving_toapply[i]
+    streamline_warp = warpNeigh.predict(streamline)
+    return streamline_warp    
+
+
     
-    
-def applyWarp(track_moving_toapply, Y_pred,X_test, warped_filename=None):        
+def applyWarp(track_moving_toapply, Y_pred,X_test, warped_filename=None,nthreads=1):        
              print("Apply Warp...")   
              t0 = time()
              track_moving_toapply=set_number_of_points( track_moving_toapply , N_points )
@@ -147,9 +165,21 @@ def applyWarp(track_moving_toapply, Y_pred,X_test, warped_filename=None):
                      track_moving_warped[idx] =  moving_warped[idx*N_points:N_points*(idx+1)]    
              else:
                  track_moving_warped = track_moving_toapply.copy()
-                 for i, streamline in enumerate(track_moving_toapply):
-                     streamline_warp = warpNeigh.predict(streamline)
-                     track_moving_warped[i] += streamline_warp
+                 if nthreads == 1:
+                    for i, streamline in enumerate(track_moving_toapply):
+                        streamline_warp = warpNeigh.predict(streamline)
+                        track_moving_warped[i] += streamline_warp
+                 else:
+                        if nthreads==-1:
+                            nthreads=cpu_count()
+                        #set_start_method('spawn', force=True)
+                        func = partial(applyWarp2streamline,warpNeigh,track_moving_toapply)
+                        p = Pool(nthreads)
+                        MAP = p.map(func,range(len(track_moving_toapply)))
+                        close_pool(p)
+                        for i,streamline_warp in enumerate(MAP):
+                            track_moving_warped[i] += streamline_warp
+                        
              if warped_filename is not None:       
                 track_moving_warped_sft=StatefulTractogram(track_moving_warped, ref_nib, Space.RASMM)
                 idx_toremove,idx_tokeep = track_moving_warped_sft.remove_invalid_streamlines()
@@ -179,17 +209,18 @@ if __name__ == '__main__':
 
         try:
             filename1_toapply=sys.argv[7]
+            
             #track_moving_toapply, header1_toapply, lengths1_toapply, indices1_toapply=load_streamlines(filename1_toapply,container="array",verbose=True,idxs=N_streamlines1,apply_affine=True)
             track_moving_toapply, header1_toapply, lengths1_toapply, indices1_toapply=load_streamlines(filename1_toapply,container="array",verbose=True,apply_affine=True)
         except:
+            filename1_toapply=None
             pass
-
+        
         try:
             output_streamlines=sys.argv[8]
         except:
             pass
         
-        print(filename1_toapply)
         
         ref_nib=nib.load(ref_filename1)
         ref_data=ref_nib.get_data()
@@ -219,7 +250,8 @@ if __name__ == '__main__':
         #reference_warp=save_dir+'/sub-1178_Reg2sub-1160_MNI/sub-1178__T1w_rigid_warped_SyN1Warp.nii.gz'
         disp=np.load(disp_filename)
         Y_pred, X_test = disp2warp(disp,track_moving,dims,n_neighbors,aff_moving,warpfiled_filename=output,reference=reference_warp,inv=inverse,mask_warp_flag=False)
-        applyWarp(track_moving_toapply, Y_pred, X_test,output_streamlines)
+        if filename1_toapply is not None:
+            applyWarp(track_moving_toapply, Y_pred, X_test,output_streamlines,nthreads=nthreads)
     
 
 
